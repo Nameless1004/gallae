@@ -54,8 +54,6 @@ const LEAF_H = 148; // layout spacing — cards auto-size to content (no minHeig
 
 const BRANCH_RADIUS = 330;
 const LEAF_OFFSET = 310;
-const LEAF_VSPREAD = 142;
-const BRANCH_Y_RANGE = 540;
 
 type CenterData = {
   essence: string;
@@ -81,6 +79,7 @@ type LeafData = {
   isRight: boolean;
   focused: boolean;
 };
+
 
 function leverageStyle(leverage: Leverage) {
   switch (leverage) {
@@ -272,6 +271,12 @@ function LeafNode({ data }: NodeProps) {
         position={d.isRight ? Position.Left : Position.Right}
         style={{ opacity: 0, pointerEvents: "none" }}
       />
+      <Handle
+        type="source"
+        id="out"
+        position={d.isRight ? Position.Right : Position.Left}
+        style={{ opacity: 0, pointerEvents: "none" }}
+      />
       <div
         className="rounded-xl px-3 py-2.5 text-[12px] leading-tight transition-all"
         style={{
@@ -301,7 +306,7 @@ function LeafNode({ data }: NodeProps) {
         ) : null}
         {leaf.probe ? (
           <p className="mt-1.5 flex gap-1 text-[10px] leading-snug text-ink-mute line-clamp-2">
-            <span className="shrink-0 font-medium text-cyan">점검</span>
+            <span className="shrink-0 font-medium text-cyan">진단</span>
             <span>{leaf.probe}</span>
           </p>
         ) : null}
@@ -360,16 +365,18 @@ function buildGraph(
 
   // For a branch at given Y, leaves stack vertically around it. Slot height
   // is the max of branch card height and the total leaf stack height.
-  function slotHeight(leafCount: number): number {
-    if (leafCount === 0) return BRANCH_H;
-    const leafBlock = leafCount * LEAF_H + (leafCount - 1) * LEAF_GAP;
+  function slotHeight(branch: Branch): number {
+    const leaves = branch.leaves ?? [];
+    if (leaves.length === 0) return BRANCH_H;
+    const leafBlock =
+      leaves.length * LEAF_H + (leaves.length - 1) * LEAF_GAP;
     return Math.max(BRANCH_H, leafBlock);
   }
 
   function placeSide(sideIdx: number[], isRight: boolean) {
     if (sideIdx.length === 0) return;
 
-    const slots = sideIdx.map((i) => slotHeight(branches[i].leaves?.length ?? 0));
+    const slots = sideIdx.map((i) => slotHeight(branches[i]));
     const totalH =
       slots.reduce((a, b) => a + b, 0) +
       (sideIdx.length - 1) * BRANCH_GAP;
@@ -424,18 +431,19 @@ function buildGraph(
 
       // Leaves stacked vertically, centered on branchCenterY
       const leaves = branch.leaves ?? [];
-      const leafCount = leaves.length;
       const leafBlockH =
-        leafCount === 0
+        leaves.length === 0
           ? 0
-          : leafCount * LEAF_H + (leafCount - 1) * LEAF_GAP;
+          : leaves.length * LEAF_H + (leaves.length - 1) * LEAF_GAP;
       const leavesTop = branchCenterY - leafBlockH / 2;
 
-      leaves.forEach((leaf, li) => {
+      let leafCursor = leavesTop;
+      leaves.forEach((leaf) => {
         const leafX = isRight
           ? branchX + LEAF_OFFSET
           : branchX - LEAF_OFFSET;
-        const leafCenterY = leavesTop + li * (LEAF_H + LEAF_GAP) + LEAF_H / 2;
+        const leafCenterY = leafCursor + LEAF_H / 2;
+        leafCursor += LEAF_H + LEAF_GAP;
 
         nodes.push({
           id: leaf.id,
@@ -469,6 +477,7 @@ function buildGraph(
             opacity: isFocused ? 0.65 : 0.18,
           },
         });
+
       });
     });
   }
@@ -498,24 +507,74 @@ export function MindMap(props: Props) {
   );
 }
 
-function Inner({ data, selected, onSelectBranch, isStreaming }: Props) {
+function Inner({
+  data,
+  selected,
+  onSelectBranch,
+  isStreaming,
+}: Props) {
+  const graphSignature = JSON.stringify({
+    framework: data.framework,
+    essence: data.essence,
+    frame: data.frame,
+    branches: data.branches,
+  });
+  const graphData = useMemo(() => {
+    const graphOnly = JSON.parse(graphSignature) as Pick<
+      Decomposition,
+      "framework" | "essence" | "frame" | "branches"
+    >;
+    return {
+      problem: "",
+      framework: graphOnly.framework,
+      essence: graphOnly.essence,
+      frame: graphOnly.frame,
+      branches: graphOnly.branches,
+      diagnosis: {
+        visibleProblem: "",
+        likelyProblems: [],
+        questions: [],
+        solveNow: "",
+        defer: "",
+      },
+      firstStep: { title: "", minutes: 5, reveals: "", narrows: "" },
+      actionOptions: [],
+      blockers: [],
+    } satisfies Decomposition;
+  }, [graphSignature]);
+
   const { nodes, edges } = useMemo(
-    () => buildGraph(data, selected, onSelectBranch),
-    [data, selected, onSelectBranch]
+    () => buildGraph(graphData, selected, onSelectBranch),
+    [graphData, selected, onSelectBranch]
   );
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const flow = useReactFlow();
+  const fittedNodeCountRef = useRef(0);
 
-  // Re-fit when nodes change (esp. during streaming)
+  // Follow only structural graph growth. Text updates and lower-panel streaming
+  // should not move the canvas, but new branch/leaf nodes should stay in view.
   useEffect(() => {
+    if (nodes.length <= 1) return;
+
+    const previousCount = fittedNodeCountRef.current;
+    if (nodes.length <= previousCount) {
+      fittedNodeCountRef.current = nodes.length;
+      return;
+    }
+
     const id = window.setTimeout(() => {
       try {
-        flow.fitView({ padding: 0.06, duration: 380, maxZoom: 1.15 });
+        flow.fitView({
+          padding: isStreaming ? 0.1 : 0.08,
+          duration: isStreaming ? 220 : 280,
+          maxZoom: 1.08,
+        });
+        fittedNodeCountRef.current = nodes.length;
       } catch {}
-    }, 30);
+    }, isStreaming ? 80 : 30);
     return () => window.clearTimeout(id);
-  }, [nodes.length, flow]);
+  }, [nodes.length, flow, isStreaming]);
 
   const downloadMd = useCallback(() => {
     const md = decompositionToMarkdown(data);
@@ -546,7 +605,7 @@ function Inner({ data, selected, onSelectBranch, isStreaming }: Props) {
       const link = document.createElement("a");
       const stamp = new Date().toISOString().slice(0, 10);
       link.href = dataUrl;
-      link.download = `gallae-${stamp}.png`;
+      link.download = `reframe-${stamp}.png`;
       link.click();
     } catch (err) {
       console.error(err);

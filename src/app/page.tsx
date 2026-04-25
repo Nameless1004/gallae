@@ -9,6 +9,7 @@ import {
   type Branch,
   type BranchKind,
   type Decomposition,
+  type Diagnosis,
   type Leaf,
   type Leverage,
 } from "@/lib/types";
@@ -26,6 +27,38 @@ function pickLeverage(v: unknown): Leverage {
   if (typeof v === "string" && LEVERAGES.includes(v as Leverage))
     return v as Leverage;
   return "medium";
+}
+
+function takeString(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function pickDiagnosis(obj: Record<string, unknown>): Diagnosis {
+  const raw = obj.diagnosis as Record<string, unknown> | undefined;
+  const likelyRaw = Array.isArray(raw?.likelyProblems)
+    ? raw.likelyProblems
+    : [];
+  const questionsRaw = Array.isArray(raw?.questions) ? raw.questions : [];
+
+  return {
+    visibleProblem: takeString(raw?.visibleProblem),
+    likelyProblems: likelyRaw
+      .filter((item): item is Record<string, unknown> => {
+        return !!item && typeof item === "object";
+      })
+      .map((item) => ({
+        title: takeString(item.title),
+        why: takeString(item.why),
+        verify: takeString(item.verify),
+      }))
+      .filter((item) => item.title),
+    questions: questionsRaw.filter(
+      (question): question is string =>
+        typeof question === "string" && question.trim().length > 0
+    ),
+    solveNow: takeString(raw?.solveNow),
+    defer: takeString(raw?.defer),
+  };
 }
 
 /**
@@ -50,6 +83,7 @@ function partialToDecomposition(
   if (!essence) return null;
 
   const frame = typeof obj.frame === "string" ? obj.frame : "";
+  const diagnosis = pickDiagnosis(obj);
 
   const branchesRaw = Array.isArray(obj.branches) ? obj.branches : [];
   const branches: Branch[] = [];
@@ -75,6 +109,17 @@ function partialToDecomposition(
       // Backward-compat: legacy responses may emit a single `detail` string —
       // treat it as `why` so older streams still render.
       const legacyDetail = typeof lf.detail === "string" ? lf.detail : "";
+      const actionsRaw = Array.isArray(lf.actions) ? lf.actions : [];
+      const actions = actionsRaw
+        .filter((item): item is Record<string, unknown> => {
+          return !!item && typeof item === "object";
+        })
+        .map((item, ai) => ({
+          id: `${id}-l${li + 1}-a${ai + 1}`,
+          label: takeString(item.label || item.title),
+          how: takeString(item.how || item.probe || item.check),
+        }))
+        .filter((item) => item.label);
       leaves.push({
         id: `${id}-l${li + 1}`,
         label: llabel,
@@ -82,6 +127,7 @@ function partialToDecomposition(
         why: typeof lf.why === "string" ? lf.why : legacyDetail,
         signal: typeof lf.signal === "string" ? lf.signal : "",
         probe: typeof lf.probe === "string" ? lf.probe : "",
+        actions,
       });
     });
 
@@ -123,19 +169,41 @@ function partialToDecomposition(
       };
     });
 
+  const actionsRaw = Array.isArray(obj.actionOptions)
+    ? obj.actionOptions
+    : [];
+  const actionOptions = actionsRaw
+    .filter(
+      (a): a is Record<string, unknown> =>
+        !!a &&
+        typeof a === "object" &&
+        typeof (a as { title?: unknown }).title === "string"
+    )
+    .map((a) => ({
+      minutes:
+        typeof a.minutes === "number" && Number.isFinite(a.minutes)
+          ? Math.max(1, Math.min(30, Math.round(a.minutes)))
+          : 5,
+      title: a.title as string,
+      purpose: typeof a.purpose === "string" ? a.purpose : "",
+    }));
+
   return {
     problem,
     framework,
     essence,
     frame,
+    diagnosis,
     branches,
     firstStep,
+    actionOptions,
     blockers,
   };
 }
 
 type Depth = "narrow" | "balanced" | "wide";
 type Tone = "warm" | "neutral" | "sharp";
+type FrameworkChoice = string;
 
 const EXAMPLES: { title: string; problem: string; tag: string; accent: string }[] = [
   {
@@ -169,14 +237,23 @@ export default function Page() {
   const [selected, setSelected] = useState<string | null>(null);
   const [seedProblem, setSeedProblem] = useState("");
   const [seedKey, setSeedKey] = useState(0);
+  const [focusSignal, setFocusSignal] = useState(0);
   const [lastInput, setLastInput] = useState<{
     problem: string;
     depth: Depth;
     tone: Tone;
+    framework: FrameworkChoice;
   } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const canvasRef = useRef<HTMLElement | null>(null);
+  const scrolledRef = useRef(false);
 
-  async function submit(problem: string, depth: Depth, tone: Tone) {
+  async function submit(
+    problem: string,
+    depth: Depth,
+    tone: Tone,
+    framework: FrameworkChoice
+  ) {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -186,13 +263,14 @@ export default function Page() {
     setError(null);
     setSelected(null);
     setData(null);
-    setLastInput({ problem, depth, tone });
+    setLastInput({ problem, depth, tone, framework });
+    scrolledRef.current = false;
 
     try {
       const res = await fetch("/api/decompose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ problem, depth, tone }),
+        body: JSON.stringify({ problem, depth, tone, framework }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -208,6 +286,12 @@ export default function Page() {
       const decoder = new TextDecoder();
       let raw = "";
       setIsStreaming(true);
+      if (!scrolledRef.current) {
+        scrolledRef.current = true;
+        window.requestAnimationFrame(() => {
+          canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
 
       while (true) {
         const { done, value } = await reader.read();
@@ -242,9 +326,7 @@ export default function Page() {
   function pickExample(problem: string) {
     setSeedProblem(problem);
     setSeedKey((k) => k + 1);
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    setFocusSignal((k) => k + 1);
   }
 
   function reset() {
@@ -273,6 +355,8 @@ export default function Page() {
             initialProblem={seedProblem || lastInput?.problem || ""}
             initialDepth={lastInput?.depth ?? "balanced"}
             initialTone={lastInput?.tone ?? "warm"}
+            initialFramework={lastInput?.framework ?? "auto"}
+            focusSignal={focusSignal}
             isLoading={isLoading}
             compact={!showHero}
             onSubmit={submit}
@@ -289,7 +373,7 @@ export default function Page() {
         {showHero ? <Examples examples={EXAMPLES} onPick={pickExample} /> : null}
 
         {(isLoading || data) && (
-          <section className="mt-10 flex flex-col gap-6">
+          <section ref={canvasRef} className="mt-10 flex flex-col gap-6">
             <div className="surface-card relative overflow-hidden rounded-3xl p-4 sm:p-6">
               <CanvasHeader
                 data={data}
@@ -311,7 +395,7 @@ export default function Page() {
             </div>
 
             <aside>
-              {data ? (
+              {data && data.firstStep.title ? (
                 <InsightPanel
                   data={data}
                   selected={selected}
@@ -350,10 +434,10 @@ function Header({
           <Logo />
           <div className="text-left">
             <p className="text-display text-base font-bold leading-none tracking-tight text-ink">
-              갈래
+              Re:Frame
             </p>
             <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.22em] text-ink-mute">
-              GALLAE · 문제를 갈라 봅니다
+              문제를 다시 보는 사고 도구
             </p>
           </div>
         </button>
@@ -365,7 +449,7 @@ function Header({
               onClick={onReset}
               className="rounded-full border border-line bg-white px-3.5 py-1.5 text-xs font-medium text-ink-soft transition hover:border-line-strong hover:bg-[var(--surface-warm)] hover:text-ink"
             >
-              ↺ 새로 분해하기
+              ↺ 새로 보기
             </button>
           ) : null}
           <a
@@ -393,22 +477,41 @@ function Logo() {
         <defs>
           <linearGradient id="logo-grad" x1="0%" x2="100%" y1="0%" y2="100%">
             <stop offset="0%" stopColor="#1f8aa8" />
-            <stop offset="50%" stopColor="#6a59b8" />
-            <stop offset="100%" stopColor="#b87a1f" />
+            <stop offset="58%" stopColor="#6a59b8" />
+            <stop offset="100%" stopColor="#b04a64" />
+          </linearGradient>
+          <linearGradient id="logo-shine" x1="0%" x2="100%" y1="0%" y2="100%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.92" />
+            <stop offset="100%" stopColor="#ffffff" stopOpacity="0.36" />
           </linearGradient>
         </defs>
-        <circle cx="18" cy="18" r="3" fill="url(#logo-grad)" />
+        <rect
+          x="3.5"
+          y="3.5"
+          width="29"
+          height="29"
+          rx="9"
+          fill="url(#logo-grad)"
+        />
+        <g transform="translate(-1.4 0)">
+          <path
+            d="M11.2 11.4h9.6c4.1 0 6.8 2.3 6.8 5.8 0 2.5-1.4 4.3-3.7 5.1l4 6.3h-5.3l-3.4-5.6h-3v5.6h-5V11.4Zm5 3.9v4h4.1c1.4 0 2.2-.8 2.2-2s-.8-2-2.2-2h-4.1Z"
+            fill="rgba(255,255,255,0.94)"
+          />
+        </g>
         <g
-          stroke="url(#logo-grad)"
-          strokeWidth="1.4"
+          stroke="url(#logo-shine)"
+          strokeWidth="1.35"
           strokeLinecap="round"
+          strokeLinejoin="round"
           fill="none"
         >
-          <path d="M18 15 C 18 9, 9 9, 6 5" />
-          <path d="M18 15 C 18 9, 27 9, 30 5" />
-          <path d="M18 21 C 18 27, 9 27, 6 31" />
-          <path d="M18 21 C 18 27, 27 27, 30 31" />
+          <path d="M9.6 8.8h7.1" opacity="0.9" />
+          <path d="M8.8 9.6v7.1" opacity="0.9" />
+          <path d="M26.4 27.2h-7.1" opacity="0.72" />
+          <path d="M27.2 26.4v-7.1" opacity="0.72" />
         </g>
+        <circle cx="25.8" cy="10.4" r="2.1" fill="#ffffff" opacity="0.78" />
       </svg>
     </div>
   );
@@ -420,16 +523,16 @@ function Hero() {
       <div className="flex flex-col items-center text-center">
         <div className="inline-flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1 text-[11px] font-medium text-ink-soft animate-fade-in">
           <span className="size-1.5 rounded-full bg-cyan animate-blink" />
-          DeepSeek가 함께 사고합니다
+          문제를 다시 보는 사고 도구
         </div>
 
         <h1 className="text-display mt-6 text-[44px] font-bold leading-[1.05] tracking-tight sm:text-[64px] lg:text-[80px]">
           <span className="text-ink">문제를 </span>
-          <span className="text-gradient-aurora">갈라</span>
+          <span className="text-gradient-aurora">다시</span>
           <span className="text-ink"> 봅니다.</span>
         </h1>
         <p className="mt-5 max-w-2xl text-base leading-relaxed text-ink-soft sm:text-lg">
-          쓰기만 하면, 갈래가 본질·핵심 가지·첫 한 걸음으로 정리해 시각화해 드려요.
+          쓰기만 하면 Re:Frame이 문제의 본질, 검증 포인트, 첫 한 걸음을 구조화해 드려요.
           <br className="hidden sm:inline" /> 막힘은 의지가 아니라 구조의 문제입니다.
         </p>
 
@@ -521,13 +624,13 @@ function CanvasHeader({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-ink-mute">
-            CANVAS · 분해도
+            CANVAS · 사고 지도
           </p>
           <p className="text-display truncate text-[13px] font-semibold text-ink sm:text-sm">
             {isStreaming
-              ? "가지를 갈라 그리는 중…"
+              ? "생각의 구조를 그리는 중…"
               : isLoading
-                ? "지금 갈라보는 중…"
+                ? "문제를 다시 보는 중…"
                 : "마인드맵을 클릭해 가지를 살펴보세요"}
           </p>
         </div>
@@ -699,7 +802,7 @@ function MindMapSkeleton() {
           </div>
         </div>
         <p className="text-display text-center text-sm font-medium text-ink-soft">
-          문제를 갈라보고 있어요
+          문제를 다시 보고 있어요
         </p>
 
         <div className="mt-2 flex w-full max-w-[260px] flex-col gap-2.5">
@@ -839,7 +942,7 @@ function MindMapSkeleton() {
               />
             </div>
             <p className="text-display mt-3 text-xs leading-relaxed text-ink-mute">
-              문제를 갈라보고 있어요…
+              문제를 다시 보고 있어요…
             </p>
           </div>
         </div>
@@ -896,13 +999,13 @@ function Howto() {
     {
       num: "01",
       title: "있는 그대로 적기",
-      body: "정돈하지 말고, 머리에 떠오르는 흐릿한 표현 그대로 입력합니다. 갈래가 본질을 다시 찾아 줍니다.",
+      body: "정돈하지 말고, 머리에 떠오르는 흐릿한 표현 그대로 입력합니다. Re:Frame이 본질을 다시 찾아 줍니다.",
       color: "#1f8aa8",
     },
     {
       num: "02",
-      title: "가지로 갈라보기",
-      body: "원인·제약·하위 목표·관계자·레버리지로 문제를 갈라 시각화합니다. 가지를 클릭해 자세히 봅니다.",
+      title: "구조로 다시 보기",
+      body: "원인·제약·하위 목표·관계자·레버리지로 문제를 구조화합니다. 가지를 클릭해 자세히 봅니다.",
       color: "#6a59b8",
     },
     {
@@ -920,7 +1023,7 @@ function Howto() {
           HOWTO · 사용법
         </span>
         <h2 className="text-display mt-3 text-3xl font-bold leading-tight text-ink sm:text-4xl">
-          세 단계로 갈라 봅니다
+          세 단계로 다시 봅니다
         </h2>
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -961,10 +1064,10 @@ function Footer() {
     <footer className="border-t border-line">
       <div className="mx-auto flex w-full max-w-[1320px] flex-col items-start justify-between gap-3 px-5 py-8 sm:flex-row sm:items-center sm:px-8">
         <p className="text-[11px] text-ink-mute">
-          갈래 · GALLAE — 문제를 갈라 봅니다.
+          Re:Frame — 문제를 다시 보는 사고 도구.
         </p>
         <p className="text-[11px] text-ink-mute">
-          DeepSeek API로 동작합니다. 의료/법률 단정 답변에 사용하지 마세요.
+          AI가 만든 결과는 가설입니다. 의료/법률 단정 답변에 사용하지 마세요.
         </p>
       </div>
     </footer>

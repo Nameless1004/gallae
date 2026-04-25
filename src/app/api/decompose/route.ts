@@ -7,6 +7,7 @@ type DecomposeRequest = {
   problem: string;
   depth?: "narrow" | "balanced" | "wide";
   tone?: "warm" | "neutral" | "sharp";
+  framework?: string;
 };
 
 const SYSTEM_PROMPT = `당신은 문제를 구조분해(structural decomposition) 해주는 사고 코치입니다.
@@ -28,6 +29,16 @@ const SYSTEM_PROMPT = `당신은 문제를 구조분해(structural decomposition
 - "SCQA 피라미드" — 글·보고 구조화. 가지: 상황/복잡성/질문/답변·근거.
 - "감정 분해" — 감정·관계·내면 문제. 가지: 사실/감정/욕구/요청.
 - "환경/내면" — 의지가 아닌 구조 관점. 가지: 환경/시스템/습관/자기인식.
+- "Decision Matrix" — 선택지 비교·판단 기준 정리. 가지: 판단기준/선택지/트레이드오프/검증.
+- "Lean Experiment" — 아이디어·가설 검증. 가지: 가설/가장 작은 실험/성공 기준/다음 결정.
+- "ICE/RICE" — 기능·작업 우선순위. 가지: 영향/확신/노력 또는 도달범위/영향/확신/노력.
+- "Stakeholder Map" — 협업·조직·갈등 문제. 가지: 이해관계자/욕구/충돌/조정 포인트.
+- "User Journey" — 제품·서비스 경험 문제. 가지: 단계/마찰/감정/개선 기회.
+- "Root Cause Tree" — 원인 분석. 가지: 증상/원인 후보/증거/검증.
+- "SWOT" — 상황 판단. 가지: 강점/약점/기회/위협.
+- "Impact-Effort Matrix" — 실행 우선순위. 가지: 고효과저노력/고효과고노력/저효과저노력/제외.
+- "Risk Matrix" — 위험 판단. 가지: 고위험/중위험/저위험/완화책.
+- "Assumption Mapping" — 불확실한 가정 검증. 가지: 핵심 가정/불확실성/검증 방법/학습 기준.
 - 위 외에도 문제에 더 잘 맞는 프레임이 있다면 자유롭게 선택하거나 변형하세요.
 
 선택 원칙:
@@ -37,7 +48,17 @@ const SYSTEM_PROMPT = `당신은 문제를 구조분해(structural decomposition
 - "할 일이 너무 많다" → Eisenhower / OKR.
 - "위험·실패 걱정" → Pre-mortem.
 - "사용자/제품" → JTBD.
+- "A냐 B냐, 무엇을 고를까" → Decision Matrix.
+- "아이디어가 될지 모르겠다" → Lean Experiment 또는 Assumption Mapping.
+- "우선순위가 어렵다" → ICE/RICE 또는 Impact-Effort Matrix.
+- "팀·이해관계자가 얽혀 있다" → Stakeholder Map.
+- "사용자가 어디서 막히는지 모르겠다" → User Journey.
+- "원인이 여러 개로 보인다" → Root Cause Tree.
 - 단순 회고면 STAR.
+
+사용자가 framework를 "auto"가 아닌 값으로 지정하면, 그 프레임워크를 우선 사용하세요.
+지정한 프레임워크가 문제와 완전히 맞지 않아도 가능한 한 그 렌즈의 문법으로 변형해 분해하세요.
+framework가 "auto"이거나 비어 있으면 위 선택 원칙에 따라 가장 적합한 프레임워크를 직접 고르세요.
 
 응답은 다음 JSON 스키마로만 (설명·머리말·코드펜스 없이 순수 JSON 한 객체).
 
@@ -62,9 +83,37 @@ JSON schema (모든 필드는 평범한 자연어 문장이어야 합니다 — 
           "leverage": "high|medium|low",
           "why": "이 항목이 사용자 문제에서 왜 의미 있는지 한 문장 (60자 이내). 사용자 문제의 단어를 인용.",
           "signal": "실제로 이게 문제일 때 보이는 구체 신호/예시 한 문장 (60자 이내).",
-          "probe": "5분 안에 점검할 한 가지 질문 또는 행동 한 문장 (45자 이내)."
+          "probe": "5분 안에 점검할 한 가지 질문 또는 행동 한 문장 (45자 이내).",
+          "actions": [
+            {
+              "label": "이 항목을 해결하기 위한 구체 액션 (16자 이내, 동사형).",
+              "how": "어떻게 하는지 한 문장 (50자 이내). 구체 동사로 끝낼 것."
+            }
+          ]
         }
       ]
+    }
+  ],
+  "diagnosis": {
+    "visibleProblem": "사용자가 겉으로 말한 문제를 한 문장으로 재진술 (70자 이내).",
+    "likelyProblems": [
+      {
+        "title": "실제로 의심되는 핵심 문제 후보 (16자 이내).",
+        "why": "왜 이 후보가 진짜 문제일 수 있는지 한 문장 (70자 이내).",
+        "verify": "이 후보를 확인할 질문 또는 작은 행동 한 문장 (55자 이내)."
+      }
+    ],
+    "questions": [
+      "문제를 더 정확히 정의하기 위해 확인해야 할 날카로운 질문 (55자 이내)."
+    ],
+    "solveNow": "지금 먼저 풀어야 할 부분 한 문장 (60자 이내).",
+    "defer": "지금은 미뤄도 되는 부분 한 문장 (60자 이내)."
+  },
+  "blockers": [
+    {
+      "title": "예상 장애물 (18자 이내). 일반론이 아닌, 사용자 문제 맥락에서 실제로 일어날 만한 것.",
+      "preempt": "선제 대응을 구체 동사 한 문장 (50자 이내).",
+      "fallback": "그래도 막히면 시도할 대안 한 문장 (50자 이내)."
     }
   ],
   "firstStep": {
@@ -73,21 +122,39 @@ JSON schema (모든 필드는 평범한 자연어 문장이어야 합니다 — 
     "reveals": "이 행동이 무엇을 드러내는지 한 문장 (60자 이내).",
     "narrows": "그 결과가 다음 한 걸음의 방향을 어떻게 좁혀주는지 한 문장 (60자 이내)."
   },
-  "blockers": [
+  "actionOptions": [
     {
-      "title": "예상 장애물 (18자 이내). 일반론이 아닌, 사용자 문제 맥락에서 실제로 일어날 만한 것.",
-      "preempt": "선제 대응을 구체 동사 한 문장 (50자 이내).",
-      "fallback": "그래도 막히면 시도할 대안 한 문장 (50자 이내)."
+      "minutes": 5,
+      "title": "5분 안에 할 수 있는 행동 (24자 이내).",
+      "purpose": "이 행동의 목적 한 문장 (55자 이내)."
+    },
+    {
+      "minutes": 15,
+      "title": "15분 안에 할 수 있는 행동 (24자 이내).",
+      "purpose": "이 행동의 목적 한 문장 (55자 이내)."
+    },
+    {
+      "minutes": 30,
+      "title": "30분 안에 할 수 있는 행동 (24자 이내).",
+      "purpose": "이 행동의 목적 한 문장 (55자 이내)."
     }
   ]
 }
 
 규칙:
-- 키 순서는 framework → essence → frame → branches → firstStep → blockers.
-- branches는 3~5개. 각 branches.leaves는 2~4개.
+- 키 순서는 반드시 framework → essence → frame → branches → diagnosis → blockers → firstStep → actionOptions 입니다.
+- 스트리밍 UI가 먼저 마인드맵을 그릴 수 있도록 branches를 diagnosis, blockers, firstStep, actionOptions보다 먼저 완성하세요.
+- firstStep과 actionOptions는 JSON 객체의 가장 마지막 부분에 작성하세요.
+- diagnosis.likelyProblems는 3개, diagnosis.questions는 3~5개.
+- likelyProblems는 해결책이 아니라 "진짜 문제 후보"입니다. 사용자의 표현을 재정의하되 단정하지 마세요.
+- actionOptions는 반드시 5분, 15분, 30분 세 개를 모두 작성합니다. 할 일 목록이 아니라 실행 저항을 줄이는 첫 행동이어야 합니다.
+- branches와 leaves 수는 depth의 범위 안에서 문제 복잡도에 맞게 고릅니다. 매번 같은 개수로 고정하지 마세요.
+- leaf 안에서 실제로 해결이 필요한 항목에만 actions를 2~3개 작성합니다. 모든 leaf에 억지로 넣지 말고, leverage가 high인 leaf 위주로 넣습니다.
+- narrow는 actions를 거의 쓰지 말고, balanced는 high leverage leaf에만 2개, wide는 주요 leaf에 2~3개까지 허용합니다.
+- actions가 없는 leaf는 actions 키 자체를 생략합니다. 빈 배열([])은 쓰지 마세요.
 - branches는 선택한 프레임워크의 분류 체계를 따라야 합니다 (예: 5 Whys 선택 시 가지가 '1차원인','2차원인',… 이런 식).
 - 같은 분해 안에서 branch.kind는 서로 다릅니다 (중복 금지).
-- blockers는 1~3개.
+- blockers도 depth 범위 안에서 문제 복잡도에 맞게 작성합니다.
 - 모든 사용자에게 보이는 문자열은 한국어로 작성합니다.
 - **마커 금지**: 어떤 필드에도 [1], [2], ①, ②, ③, ▶, "①번:", "Step 1." 같은 번호/기호 마커를 절대 쓰지 마세요. 모든 필드는 평범한 한국어 문장 그 자체로 작성합니다.
 - **일반론 금지**: "기억에 의존해 오차 발생", "데이터로 만들면 누수가 보인다" 같은 격언/원칙 문장은 쓰지 마세요. 사용자 문제의 단어·상황을 인용해 그 사람의 사례에 닿게 만드세요.
@@ -95,9 +162,10 @@ JSON schema (모든 필드는 평범한 자연어 문장이어야 합니다 — 
 - 의료/법률 단정 금지.
 
 depth 가이드:
-- narrow: branches 3, leaves 2~3, 가장 핵심만.
-- balanced: branches 3~4, leaves 3.
-- wide: branches 4~5, leaves 3~4.
+- narrow: branches 3, leaves 각 2개, blockers 2. 가장 핵심만.
+- balanced: branches 4~5, leaves 각 3~4개, blockers 3~4. 기본값이지만 문제에 따라 한 단계 넓힐 수 있음.
+- wide: branches 6~7, leaves 각 4~5개, blockers 4~5. 관계자·환경·리스크·대안 경로까지 넓힘.
+- 단, 억지로 채우지 말고 사용자의 문제에서 실제로 구분되는 관점만 추가합니다.
 
 tone 가이드:
 - warm: 다정하고 안심시키는 어휘.
@@ -139,6 +207,7 @@ export async function POST(request: Request) {
 
   const depth = body.depth ?? "balanced";
   const tone = body.tone ?? "warm";
+  const framework = body.framework ?? "auto";
 
   let upstream: Response;
   try {
@@ -151,7 +220,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model: "deepseek-chat",
         response_format: { type: "json_object" },
-        max_tokens: 2600,
+        max_tokens: 5600,
         temperature: 0.55,
         stream: true,
         messages: [
@@ -164,6 +233,7 @@ export async function POST(request: Request) {
               problem,
               depth,
               tone,
+              framework,
             }),
           },
         ],
@@ -172,7 +242,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: "DeepSeek 호출 중 네트워크 오류가 발생했습니다.",
+        error: "AI 호출 중 네트워크 오류가 발생했습니다.",
         detail: error instanceof Error ? error.message : String(error),
       },
       { status: 502 }
@@ -182,7 +252,7 @@ export async function POST(request: Request) {
   if (!upstream.ok || !upstream.body) {
     const text = await upstream.text().catch(() => "");
     return NextResponse.json(
-      { error: "DeepSeek 응답이 실패했습니다.", detail: text.slice(0, 500) },
+      { error: "AI 응답이 실패했습니다.", detail: text.slice(0, 500) },
       { status: upstream.status || 502 }
     );
   }

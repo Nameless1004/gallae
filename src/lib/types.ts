@@ -3,6 +3,12 @@ export type BranchKind = string;
 
 export type Leverage = "high" | "medium" | "low";
 
+export type LeafAction = {
+  id: string;
+  label: string;
+  how: string;
+};
+
 export type Leaf = {
   id: string;
   label: string;
@@ -13,6 +19,7 @@ export type Leaf = {
   signal: string;
   /** A 5-minute probe — question or micro-action. */
   probe: string;
+  actions?: LeafAction[];
 };
 
 export type Branch = {
@@ -35,6 +42,26 @@ export type FirstStep = {
   narrows: string;
 };
 
+export type ProblemCandidate = {
+  title: string;
+  why: string;
+  verify: string;
+};
+
+export type ActionOption = {
+  minutes: number;
+  title: string;
+  purpose: string;
+};
+
+export type Diagnosis = {
+  visibleProblem: string;
+  likelyProblems: ProblemCandidate[];
+  questions: string[];
+  solveNow: string;
+  defer: string;
+};
+
 export type Blocker = {
   title: string;
   preempt: string;
@@ -51,8 +78,10 @@ export type Decomposition = {
   framework: Framework;
   essence: string;
   frame: string;
+  diagnosis: Diagnosis;
   branches: Branch[];
   firstStep: FirstStep;
+  actionOptions: ActionOption[];
   blockers: Blocker[];
 };
 
