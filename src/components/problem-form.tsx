@@ -345,11 +345,7 @@ function FrameworkPicker({
       return haystack.includes(normalizedQuery);
     });
   }, [normalizedQuery]);
-  const visibleOptions = normalizedQuery
-    ? filteredOptions
-    : FRAMEWORK_OPTIONS.filter((option) =>
-        QUICK_FRAMEWORKS.includes(option.value)
-      );
+  const visibleOptions = normalizedQuery ? filteredOptions : FRAMEWORK_OPTIONS;
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {

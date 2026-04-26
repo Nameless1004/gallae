@@ -745,7 +745,10 @@ function buildMindmap(
         },
       });
 
-      const leaves = branch.leaves ?? [];
+      const LEVERAGE_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      const leaves = (branch.leaves ?? []).slice().sort(
+        (a, b) => (LEVERAGE_ORDER[a.leverage] ?? 3) - (LEVERAGE_ORDER[b.leverage] ?? 3),
+      );
       const lBlock = leaves.length
         ? leaves.reduce((s, l) => s + lHeight(l), 0) + (leaves.length - 1) * L_GAP
         : 0;
@@ -776,7 +779,7 @@ function buildMindmap(
           sourceHandle: "out",
           target: leaf.id,
           targetHandle: "in",
-          type: "smoothstep",
+          type: "default",
           style: {
             stroke: pal.color,
             strokeWidth: 1.2,
