@@ -24,6 +24,20 @@ export function decompositionToMarkdown(data: Decomposition): string {
     out.push("");
   }
 
+  if (data.focus?.title) {
+    out.push(`## 먼저 검증할 가설`);
+    out.push("");
+    out.push(data.focus.title);
+    out.push("");
+    if (data.focus.why) {
+      out.push(`- **왜:** ${data.focus.why}`);
+    }
+    if (data.focus.check) {
+      out.push(`- **확인:** ${data.focus.check}`);
+    }
+    out.push("");
+  }
+
   if (
     data.diagnosis?.visibleProblem ||
     data.diagnosis?.likelyProblems.length ||

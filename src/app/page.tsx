@@ -83,6 +83,12 @@ function partialToDecomposition(
   if (!essence) return null;
 
   const frame = typeof obj.frame === "string" ? obj.frame : "";
+  const focusRaw = obj.focus as Record<string, unknown> | undefined;
+  const focus = {
+    title: takeString(focusRaw?.title),
+    why: takeString(focusRaw?.why),
+    check: takeString(focusRaw?.check),
+  };
   const diagnosis = pickDiagnosis(obj);
 
   const branchesRaw = Array.isArray(obj.branches) ? obj.branches : [];
@@ -193,6 +199,7 @@ function partialToDecomposition(
     framework,
     essence,
     frame,
+    focus,
     diagnosis,
     branches,
     firstStep,

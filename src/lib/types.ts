@@ -48,6 +48,12 @@ export type ProblemCandidate = {
   verify: string;
 };
 
+export type Focus = {
+  title: string;
+  why: string;
+  check: string;
+};
+
 export type ActionOption = {
   minutes: number;
   title: string;
@@ -78,6 +84,7 @@ export type Decomposition = {
   framework: Framework;
   essence: string;
   frame: string;
+  focus: Focus;
   diagnosis: Diagnosis;
   branches: Branch[];
   firstStep: FirstStep;
@@ -91,7 +98,7 @@ export function branchKindLabel(kind: BranchKind): string {
 }
 
 export const LEVERAGE_KO: Record<Leverage, string> = {
-  high: "높음",
-  medium: "중간",
-  low: "낮음",
+  high: "우선",
+  medium: "보조",
+  low: "나중",
 };

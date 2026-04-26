@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Depth = "narrow" | "balanced" | "wide";
 type Tone = "warm" | "neutral" | "sharp";
@@ -27,6 +27,11 @@ const FRAMEWORK_OPTIONS: {
   { value: "auto", label: "자동", hint: "문제에 맞는 렌즈를 Re:Frame이 직접 고릅니다.", bestFor: "무엇을 써야 할지 모를 때 가장 안전합니다." },
   { value: "5 Whys", label: "5 Whys", hint: "반복되는 문제의 근본 원인을 좁힙니다.", bestFor: "같은 문제가 자꾸 반복될 때 좋습니다." },
   { value: "이슈 트리 (MECE)", label: "MECE", hint: "결정과 전략을 빠짐없이 하위 질문으로 나눕니다.", bestFor: "큰 기획, 전략, 선택지를 빠짐없이 보고 싶을 때 좋습니다." },
+  { value: "Divide and Conquer", label: "분할 정복", hint: "큰 문제를 독립 조각으로 나누고 다시 합칩니다.", bestFor: "복잡한 작업, 복합 질문, 코딩·공부·리서치처럼 쪼개 풀 문제가 있을 때 좋습니다." },
+  { value: "Hypothesis Tree", label: "가설 트리", hint: "가능한 답 후보를 세우고 근거로 좁힙니다.", bestFor: "정답 후보가 여럿이고 무엇이 맞는지 검증해야 할 때 좋습니다." },
+  { value: "Evidence Matrix", label: "증거 매트릭스", hint: "주장, 근거, 반례, 빈칸을 나눠 봅니다.", bestFor: "사실 확인, 리서치, 논증, 출처 검증이 필요한 질문에 좋습니다." },
+  { value: "Research Plan", label: "리서치 플랜", hint: "질문, 자료, 검증 기준, 산출물로 조사 흐름을 잡습니다.", bestFor: "자료를 찾아 답을 만들어야 하는 과제나 시장 조사에 좋습니다." },
+  { value: "Debugging Ladder", label: "디버깅 래더", hint: "증상에서 재현, 범위, 원인, 패치, 회귀검증으로 내려갑니다.", bestFor: "버그, 오류, 시스템 문제가 어디서 생겼는지 찾아야 할 때 좋습니다." },
   { value: "Decision Matrix", label: "Decision Matrix", hint: "선택지와 기준을 비교해 판단을 돕습니다.", bestFor: "A/B/C 중 무엇을 고를지 애매할 때 좋습니다." },
   { value: "Lean Experiment", label: "Lean Experiment", hint: "가설을 가장 작은 실험으로 검증합니다.", bestFor: "아이디어가 될지 빠르게 확인하고 싶을 때 좋습니다." },
   { value: "Jobs-to-be-Done", label: "JTBD", hint: "사용자 행동과 맥락, 욕구를 중심으로 봅니다.", bestFor: "제품, 서비스, 고객 행동을 이해할 때 좋습니다." },
@@ -51,11 +56,14 @@ const FRAMEWORK_OPTIONS: {
 
 const QUICK_FRAMEWORKS = [
   "auto",
+  "Divide and Conquer",
   "이슈 트리 (MECE)",
+  "Hypothesis Tree",
+  "Evidence Matrix",
   "Decision Matrix",
   "Lean Experiment",
   "5 Whys",
-  "SCQA 피라미드",
+  "Research Plan",
 ];
 
 const WRITING_GUIDE: { label: string; text: string }[] = [
@@ -318,51 +326,83 @@ function FrameworkPicker({
   onChange: (value: FrameworkChoice) => void;
   disabled?: boolean;
 }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
   const active = FRAMEWORK_OPTIONS.find((option) => option.value === value);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredOptions = useMemo(() => {
+    if (!normalizedQuery) return FRAMEWORK_OPTIONS;
+    return FRAMEWORK_OPTIONS.filter((option) => {
+      const haystack = [
+        option.value,
+        option.label,
+        option.hint,
+        option.bestFor,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [normalizedQuery]);
+  const visibleOptions = normalizedQuery
+    ? filteredOptions
+    : FRAMEWORK_OPTIONS.filter((option) =>
+        QUICK_FRAMEWORKS.includes(option.value)
+      );
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!pickerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
+  function chooseFramework(nextValue: FrameworkChoice) {
+    onChange(nextValue);
+    setQuery("");
+    setOpen(false);
+  }
 
   return (
-    <div className="rounded-2xl border border-line bg-[var(--surface-soft)] p-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+    <div ref={pickerRef} className="rounded-2xl border border-line bg-[var(--surface-soft)] p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <span className="text-[10px] font-medium uppercase tracking-[0.22em] text-ink-mute">
             FRAMEWORK · 사고 렌즈
           </span>
-          <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-            {active?.hint}
-          </p>
-        </div>
-        <select
-          value={value}
-          disabled={disabled}
-          onChange={(event) =>
-            onChange(event.target.value as FrameworkChoice)
-          }
-          className="h-9 rounded-full border border-line bg-white px-3 text-xs font-medium text-ink outline-none transition hover:border-line-strong focus:border-cyan/60 focus:ring-2 focus:ring-cyan/20 disabled:opacity-60"
-        >
-          {FRAMEWORK_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label} · {option.hint}
-            </option>
-          ))}
-        </select>
-      </div>
-      {active ? (
-        <div className="mt-3 rounded-xl border border-line bg-white/65 p-3">
-          <div className="grid gap-2 text-xs leading-relaxed text-ink-soft sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-            <p>
-              <span className="font-semibold text-ink">무엇을 보나 </span>
-              {active.hint}
-            </p>
-            <p>
-              <span className="font-semibold text-ink">언제 쓰나 </span>
-              {active.bestFor}
+          <div className="mt-2 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-display text-sm font-semibold text-ink">
+                {active?.label || "자동"}
+              </span>
+              <span className="rounded-full bg-cyan/10 px-2 py-0.5 text-[10px] font-medium text-cyan">
+                {active?.value === "auto" ? "추천" : active?.value || "auto"}
+              </span>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+              {active?.hint || "문제에 맞는 렌즈를 Re:Frame이 직접 고릅니다."}
             </p>
           </div>
         </div>
-      ) : null}
-      <div className="mt-3 grid gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen((next) => !next)}
+          className="inline-flex h-9 shrink-0 items-center justify-center rounded-full border border-line bg-white px-4 text-xs font-semibold text-ink transition hover:border-line-strong hover:bg-[var(--surface-warm)] disabled:opacity-60"
+          aria-expanded={open}
+        >
+          {open ? "닫기" : "렌즈 바꾸기"}
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
         {FRAMEWORK_OPTIONS.filter((option) =>
-          QUICK_FRAMEWORKS.includes(option.value)
+          QUICK_FRAMEWORKS.slice(0, 6).includes(option.value)
         ).map((option) => {
           const selected = option.value === value;
           return (
@@ -370,24 +410,88 @@ function FrameworkPicker({
               key={option.value}
               type="button"
               disabled={disabled}
-              onClick={() => onChange(option.value)}
+              onClick={() => chooseFramework(option.value)}
               title={option.hint}
-              className={`min-h-10 rounded-xl border px-2 py-1.5 text-left transition ${
+              className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
                 selected
                   ? "border-cyan bg-white text-ink shadow-sm"
                   : "border-line bg-white/55 text-ink-soft hover:border-line-strong hover:text-ink"
               }`}
             >
-              <span className="block truncate text-[11px] font-semibold">
-                {option.label}
-              </span>
-              <span className="mt-0.5 block line-clamp-1 text-[10px] leading-snug text-ink-mute">
-                {option.hint}
-              </span>
+              {option.label}
             </button>
           );
         })}
       </div>
+
+      {open ? (
+        <div className="mt-3 rounded-xl border border-line bg-white p-2 shadow-sm">
+          <div className="flex items-center gap-2 rounded-lg border border-line bg-[var(--surface-soft)] px-3 py-2 transition focus-within:border-cyan/60 focus-within:ring-2 focus-within:ring-cyan/20">
+            <input
+              value={query}
+              disabled={disabled}
+              autoFocus
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                const first = visibleOptions[0];
+                if (first) chooseFramework(first.value);
+              }}
+              placeholder="MECE, 리서치, 버그, 증거..."
+              className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-mute disabled:opacity-60"
+            />
+            {query ? (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setQuery("")}
+                className="rounded-full px-1.5 py-0.5 text-xs text-ink-mute transition hover:bg-white hover:text-ink disabled:opacity-60"
+                aria-label="검색어 지우기"
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+
+          <div className="mt-2 max-h-64 overflow-y-auto">
+            {visibleOptions.length > 0 ? (
+              visibleOptions.map((option) => {
+                const selected = option.value === value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => chooseFramework(option.value)}
+                    className={`grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2 text-left transition ${
+                      selected
+                        ? "bg-cyan/10 text-ink"
+                        : "text-ink-soft hover:bg-[var(--surface-soft)] hover:text-ink"
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="text-display block truncate text-sm font-semibold">
+                        {option.label}
+                      </span>
+                      <span className="mt-0.5 block line-clamp-1 text-xs leading-relaxed text-ink-mute">
+                        {option.hint}
+                      </span>
+                    </span>
+                    <span className="text-[10px] font-medium text-cyan">
+                      {selected ? "선택됨" : ""}
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="px-3 py-4 text-xs leading-relaxed text-ink-mute">
+                검색 결과가 없습니다. 자동을 선택하거나 다른 단어로 찾아보세요.
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

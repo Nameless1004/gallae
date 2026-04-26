@@ -128,6 +128,8 @@ function OutcomeSummary({
 function ReframedProblem({ data }: { data: Decomposition }) {
   const diagnosis = data.diagnosis;
   const candidate = diagnosis.likelyProblems[0];
+  const focus = data.focus;
+  const hasFocus = !!focus.title;
 
   return (
     <div className="min-w-0">
@@ -137,18 +139,44 @@ function ReframedProblem({ data }: { data: Decomposition }) {
           REFRAMED · 재구성된 문제
         </span>
       </div>
-      <p className="text-display mt-2 text-lg font-semibold leading-snug text-ink">
-        {candidate?.title || data.essence}
-      </p>
-      <p className="mt-1 text-sm leading-relaxed text-ink-soft">
-        {candidate?.why || diagnosis.visibleProblem || data.frame}
-      </p>
-      {candidate?.verify ? (
-        <p className="mt-2 text-xs leading-relaxed text-ink-mute">
-          <span className="font-medium text-cyan">확인 </span>
-          {candidate.verify}
-        </p>
-      ) : null}
+      {hasFocus ? (
+        <div className="mt-2 rounded-xl border border-cyan/25 bg-cyan/10 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-cyan">
+              먼저 검증할 가설
+            </span>
+          </div>
+          <p className="text-display mt-2 text-lg font-semibold leading-snug text-ink">
+            {focus.title}
+          </p>
+          {focus.why ? (
+            <p className="mt-1 text-sm leading-relaxed text-ink-soft">
+              {focus.why}
+            </p>
+          ) : null}
+          {focus.check ? (
+            <p className="mt-2 text-xs leading-relaxed text-ink-mute">
+              <span className="font-medium text-cyan">확인 </span>
+              {focus.check}
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <p className="text-display mt-2 text-lg font-semibold leading-snug text-ink">
+            {candidate?.title || data.essence}
+          </p>
+          <p className="mt-1 text-sm leading-relaxed text-ink-soft">
+            {candidate?.why || diagnosis.visibleProblem || data.frame}
+          </p>
+          {candidate?.verify ? (
+            <p className="mt-2 text-xs leading-relaxed text-ink-mute">
+              <span className="font-medium text-cyan">확인 </span>
+              {candidate.verify}
+            </p>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
@@ -442,7 +470,7 @@ function SelectedBranchCard({
                 ) : null}
                 {leaf.probe ? (
                   <p className="mt-1 flex gap-1.5 text-[11px] leading-relaxed text-ink-mute">
-                    <span className="shrink-0 font-medium text-cyan">진단</span>
+                    <span className="shrink-0 font-medium text-cyan">확인</span>
                     <span>{leaf.probe}</span>
                   </p>
                 ) : null}
@@ -707,6 +735,7 @@ function ProblemBriefView({
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <BriefRow label="현재 문제" body={data.diagnosis.visibleProblem || data.problem} />
+          <BriefRow label="검증 가설" body={data.focus.title || candidate?.title || "가장 영향이 큰 가설을 먼저 좁힙니다."} />
           <BriefRow label="핵심 가설" body={branch?.summary || candidate?.why || data.essence} />
           <BriefRow label="근거 신호" body={leaf?.signal || branch?.check || "첫 검증 행동으로 확인이 필요합니다."} />
           <BriefRow label="다음 행동" body={data.firstStep.title} />
